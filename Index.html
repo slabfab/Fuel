@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Fuel Log">
+<title>Fuel Log</title>
+<style>
+:root{--bg:#eef1f4;--surface:#fff;--ink:#14202b;--muted:#5b6b79;--line:#d5dce2;--accent:#0b6e4f;--onaccent:#fff;--danger:#b3261e;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10171d;--surface:#19232c;--ink:#e8eef2;--muted:#93a4b2;--line:#2c3a45;--accent:#4fc79a;--onaccent:#06241a;--danger:#ff8a80}}
+:root[data-theme="dark"]{--bg:#10171d;--surface:#19232c;--ink:#e8eef2;--muted:#93a4b2;--line:#2c3a45;--accent:#4fc79a;--onaccent:#06241a;--danger:#ff8a80}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:520px;margin:0 auto;padding:16px}
+h1{font-size:1.1rem;margin:4px 0 12px;font-weight:600}
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 16px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.big{font-size:3.4rem;font-weight:700;line-height:1;color:var(--accent)}
+.unit{color:var(--muted)}
+.sub{width:100%;color:var(--muted);font-size:.9rem}
+form{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
+label{display:block;font-weight:600;margin:0 0 4px}
+input{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);margin-bottom:12px}
+input:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.hint{color:var(--muted);font-size:.85rem;margin:-6px 0 12px}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:13px 16px;background:var(--accent);color:var(--onaccent);width:100%}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);width:auto;padding:8px 12px;font-weight:500}
+button.del{background:transparent;color:var(--danger);width:auto;padding:6px 8px;font-weight:500}
+.msg{min-height:1.2em;margin:8px 0 0;color:var(--danger);font-size:.9rem}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--line)}
+li:last-child{border-bottom:0}
+.row1{font-weight:600}.row2{color:var(--muted);font-size:.85rem}
+.mpg{font-weight:700;color:var(--accent);white-space:nowrap}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px 16px}
+.bar{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.empty{color:var(--muted);padding:14px 0}
+</style>
+</head>
+<body>
+<main>
+<h1>Fuel Log</h1>
+
+<section class="hero" aria-live="polite">
+  <span class="big" id="avg">–</span><span class="unit">MPG average</span>
+  <span class="sub" id="avgsub">Add two fill-ups to see MPG.</span>
+</section>
+
+<form id="f" novalidate>
+  <label for="dt">Date</label>
+  <input id="dt" type="date">
+  <label for="odo">Odometer (miles)</label>
+  <input id="odo" inputmode="decimal" autocomplete="off" placeholder="e.g. 48210">
+  <label for="gal">Gallons</label>
+  <input id="gal" inputmode="decimal" autocomplete="off" placeholder="e.g. 11.482">
+  <p class="hint">To use your camera: tap a field, then tap its Scan Text option (the text-camera icon in the keyboard or the tap menu). Point at the odometer or pump and tap Insert.</p>
+  <label for="cost">Total cost (optional)</label>
+  <input id="cost" inputmode="decimal" autocomplete="off" placeholder="e.g. 41.20">
+  <button type="submit">Save fill-up</button>
+  <p class="msg" id="msg" role="alert"></p>
+</form>
+
+<div class="card"><ul id="list"></ul></div>
+<div class="bar">
+  <button class="ghost" id="copy" type="button">Copy data as CSV</button>
+  <button class="ghost" id="restore" type="button">Paste CSV to restore</button>
+</div>
+<p class="hint" style="margin-top:12px">MPG assumes you fill the tank each time. Data stays on this device in this browser only.</p>
+</main>
+
+<script>
+(function(){
+var KEY='fuellog.v1', entries=[];
+function load(){try{var r=localStorage.getItem(KEY);entries=r?JSON.parse(r):[];}catch(e){entries=[];}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(entries));}catch(e){msg('Could not save to this browser’s storage.');}}
+function $(id){return document.getElementById(id);}
+function msg(t){$('msg').textContent=t||'';}
+function num(s){var n=parseFloat(String(s).replace(/,/g,'.').replace(/[^0-9.]/g,''));return isFinite(n)?n:NaN;}
+function r1(n){return (Math.round(n*10)/10).toFixed(1);}
+function setToday(){var d=new Date(),p=function(n){return (n<10?'0':'')+n;};var t=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());$('dt').max=t;$('dt').value=t;}
+
+function sorted(){return entries.slice().sort(function(a,b){return a.odo-b.odo;});}
+
+function render(){
+  var s=sorted(), list=$('list');
+  list.innerHTML='';
+  if(!s.length){list.innerHTML='<li class="empty">No fill-ups yet. Add your first one above.</li>';}
+  var mpgById={};
+  for(var i=1;i<s.length;i++){var m=(s[i].odo-s[i-1].odo)/s[i].gal; mpgById[s[i].id]=m;}
+  s.slice().reverse().forEach(function(e){
+    var li=document.createElement('li');
+    var left=document.createElement('div');
+    var a=document.createElement('div');a.className='row1';
+    a.textContent=Number(e.odo).toLocaleString()+' mi · '+e.gal+' gal';
+    var b=document.createElement('div');b.className='row2';
+    b.textContent=new Date(e.date).toLocaleDateString()+(e.cost?' · $'+Number(e.cost).toFixed(2)+' · $'+(e.cost/e.gal).toFixed(3)+'/gal':'');
+    left.appendChild(a);left.appendChild(b);
+    var right=document.createElement('div');
+    var m=mpgById[e.id];
+    if(m!==undefined&&isFinite(m)){var sp=document.createElement('span');sp.className='mpg';sp.textContent=r1(m)+' MPG ';right.appendChild(sp);}
+    var d=document.createElement('button');d.className='del';d.type='button';d.textContent='Delete';
+    d.onclick=function(){if(confirm('Delete this fill-up?')){entries=entries.filter(function(x){return x.id!==e.id;});save();render();}};
+    right.appendChild(d);
+    li.appendChild(left);li.appendChild(right);list.appendChild(li);
+  });
+  if(s.length>=2){
+    var miles=s[s.length-1].odo-s[0].odo, gals=0;
+    for(var j=1;j<s.length;j++)gals+=s[j].gal;
+    $('avg').textContent=gals>0?r1(miles/gals):'–';
+    $('avgsub').textContent=Number(miles).toLocaleString()+' miles over '+gals.toFixed(2)+' gallons';
+  }else{$('avg').textContent='–';$('avgsub').textContent='Add two fill-ups to see MPG.';}
+}
+
+$('f').addEventListener('submit',function(ev){
+  ev.preventDefault();msg('');
+  var odo=num($('odo').value), gal=num($('gal').value), cost=$('cost').value?num($('cost').value):0;
+  if(!(odo>0)){msg('Enter the odometer reading in miles.');return;}
+  if(!(gal>0)){msg('Enter the gallons pumped.');return;}
+  if($('cost').value&&!(cost>0)){msg('Total cost must be a number, or leave it blank.');return;}
+  if(entries.some(function(e){return e.odo===odo;})){msg('A fill-up with that odometer reading already exists.');return;}
+  var dv=$('dt').value;
+  if(!dv){msg('Pick the date of the fill-up.');return;}
+  var when=new Date(dv+'T12:00:00');
+  if(isNaN(when.getTime())){msg('That date is not valid.');return;}
+  entries.push({id:Date.now()+'-'+Math.random().toString(36).slice(2,7),date:when.toISOString(),odo:odo,gal:gal,cost:cost});
+  save();render();$('f').reset();setToday();
+});
+
+$('copy').onclick=function(){
+  var csv='date,odometer,gallons,cost\n'+sorted().map(function(e){return [e.date,e.odo,e.gal,e.cost||''].join(',');}).join('\n');
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(csv).then(function(){msg('');alert('CSV copied. Paste it into Notes or a spreadsheet.');},function(){prompt('Copy this CSV:',csv);});
+  }else{prompt('Copy this CSV:',csv);}
+};
+$('restore').onclick=function(){
+  var t=prompt('Paste CSV (date,odometer,gallons,cost). This replaces current data.');
+  if(!t)return;
+  var out=[];
+  t.split(/\r?\n/).forEach(function(line){
+    var p=line.split(',');
+    if(p.length<3||isNaN(Date.parse(p[0])))return;
+    var o=num(p[1]),g=num(p[2]),c=p[3]?num(p[3]):0;
+    if(o>0&&g>0)out.push({id:Date.now()+'-'+out.length,date:new Date(p[0]).toISOString(),odo:o,gal:g,cost:c>0?c:0});
+  });
+  if(!out.length){msg('No valid rows found.');return;}
+  entries=out;save();render();
+};
+
+load();setToday();render();
+})();
+</script>
+</body>
+</html>
